@@ -744,7 +744,7 @@ server <- function(input, output, session) {
         updateSelectInput(session, "anova2_factor1", choices = cat_vars)
         updateSelectInput(session, "anova2_factor2", choices = cat_vars)
         
-        showNotification("Data berhasil dimuat!", type = "success")
+        showNotification("Data berhasil dimuat!", type = "default")
       }
     }, error = function(e) {
       showNotification(paste("Error loading data:", e$message), type = "error")
@@ -848,7 +848,7 @@ server <- function(input, output, session) {
         # Silently continue if update fails
       })
       
-      showNotification("Kategorisasi berhasil dibuat!", type = "message")
+      showNotification("Kategorisasi berhasil dibuat!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam kategorisasi:", e$message), type = "error")
     })
@@ -937,7 +937,7 @@ server <- function(input, output, session) {
       }
       
       values$outliers <- outliers
-      showNotification(paste("Terdeteksi", length(outliers), "outliers"), type = "message")
+      showNotification(paste("Terdeteksi", length(outliers), "outliers"), type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam deteksi outliers:", e$message), type = "error")
     })
@@ -1124,7 +1124,7 @@ server <- function(input, output, session) {
       cluster_data$cluster <- factor(clusters)
       values$cluster_results <- cluster_data
       
-      showNotification("Clustering berhasil dilakukan!", type = "success")
+      showNotification("Clustering berhasil dilakukan!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam clustering:", e$message), type = "error")
     })
@@ -1189,7 +1189,7 @@ server <- function(input, output, session) {
         values$normality_results <- perform_normality_test(values$current_data, input$norm_var)
       }
       
-      showNotification("Uji normalitas selesai!", type = "success")
+      showNotification("Uji normalitas selesai!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam uji normalitas:", e$message), type = "error")
     })
@@ -1286,7 +1286,7 @@ server <- function(input, output, session) {
         values$current_data, input$homo_numeric_var, input$homo_group_var
       )
       
-      showNotification("Uji homogenitas selesai!", type = "success")
+      showNotification("Uji homogenitas selesai!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam uji homogenitas:", e$message), type = "error")
     })
@@ -1448,7 +1448,7 @@ server <- function(input, output, session) {
         conf.level = 0.95
       )
       
-      showNotification("Uji proporsi selesai!", type = "success")
+      showNotification("Uji proporsi selesai!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam uji proporsi:", e$message), type = "error")
     })
@@ -1523,7 +1523,7 @@ server <- function(input, output, session) {
         n = n
       )
       
-      showNotification("Uji varians selesai!", type = "success")
+      showNotification("Uji varians selesai!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam uji varians:", e$message), type = "error")
     })
@@ -1611,7 +1611,7 @@ server <- function(input, output, session) {
         values$ttest_results <- t.test(group1, group2)
       }
       
-      showNotification("T-test selesai!", type = "success")
+      showNotification("T-test selesai!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam t-test:", e$message), type = "error")
     })
@@ -1691,7 +1691,7 @@ server <- function(input, output, session) {
         values$posthoc_results <- TukeyHSD(anova_model)
       }
       
-      showNotification("ANOVA satu arah selesai!", type = "success")
+      showNotification("ANOVA satu arah selesai!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam ANOVA:", e$message), type = "error")
     })
@@ -1807,7 +1807,7 @@ server <- function(input, output, session) {
         formula = formula_str
       )
       
-      showNotification("ANOVA dua arah selesai!", type = "success")
+      showNotification("ANOVA dua arah selesai!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam ANOVA dua arah:", e$message), type = "error")
     })
@@ -1919,7 +1919,7 @@ server <- function(input, output, session) {
         summary = summary(reg_model)
       )
       
-      showNotification("Model regresi berhasil dibangun!", type = "success")
+      showNotification("Model regresi berhasil dibangun!", type = "default")
     }, error = function(e) {
       showNotification(paste("Error dalam membangun model:", e$message), type = "error")
     })
