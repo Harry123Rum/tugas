@@ -765,8 +765,18 @@ server <- function(input, output, session) {
         return()
       }
       
-      # Create categorical variable
-      categorical_var <- create_categorical(var_data, input$n_categories, labels)
+      # Create categorical variable with proper error handling
+      categorical_var <- tryCatch({
+        create_categorical(var_data, input$n_categories, labels)
+      }, error = function(e) {
+        showNotification(paste("Error creating categories:", e$message), type = "error")
+        return(NULL)
+      })
+      
+      if (is.null(categorical_var)) {
+        return()
+      }
+      
       new_var_name <- paste0(input$var_to_categorize, "_cat")
       values$current_data[[new_var_name]] <- categorical_var
       
@@ -783,7 +793,7 @@ server <- function(input, output, session) {
       updateSelectInput(session, "anova2_factor1", choices = cat_vars)
       updateSelectInput(session, "anova2_factor2", choices = cat_vars)
       
-      showNotification("Kategorisasi berhasil dibuat!", type = "success")
+      showNotification("Kategorisasi berhasil dibuat!", type = "message")
     }, error = function(e) {
       showNotification(paste("Error dalam kategorisasi:", e$message), type = "error")
     })
