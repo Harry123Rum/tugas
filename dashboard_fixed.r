@@ -73,17 +73,46 @@ load_data <- function() {
 
 # Helper functions
 create_categorical <- function(x, n_categories = 3, labels = c("Rendah", "Sedang", "Tinggi")) {
-  if (length(labels) != n_categories) {
-    labels <- paste("Kategori", 1:n_categories)
-  }
-  
-  breaks <- quantile(x, probs = seq(0, 1, length.out = n_categories + 1), na.rm = TRUE)
-  # Handle case where quantiles are identical
-  if (length(unique(breaks)) < length(breaks)) {
-    breaks <- seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE), length.out = n_categories + 1)
-  }
-  
-  cut(x, breaks = breaks, labels = labels, include.lowest = TRUE)
+  tryCatch({
+    # Validate inputs
+    if (length(labels) != n_categories) {
+      labels <- paste("Kategori", 1:n_categories)
+    }
+    
+    # Remove NA values for quantile calculation
+    x_clean <- x[!is.na(x)]
+    
+    if (length(x_clean) == 0) {
+      stop("No valid data for categorization")
+    }
+    
+    # Calculate breaks using quantiles
+    breaks <- quantile(x_clean, probs = seq(0, 1, length.out = n_categories + 1), na.rm = TRUE)
+    
+    # Handle case where quantiles are identical (all values are the same)
+    if (length(unique(breaks)) < length(breaks)) {
+      min_val <- min(x_clean, na.rm = TRUE)
+      max_val <- max(x_clean, na.rm = TRUE)
+      
+      if (min_val == max_val) {
+        # All values are the same, create a single category
+        result <- factor(rep(labels[1], length(x)), levels = labels[1])
+        return(result)
+      } else {
+        # Create equal-width intervals
+        breaks <- seq(min_val, max_val, length.out = n_categories + 1)
+        breaks[1] <- min_val - 0.001  # Ensure all values are included
+        breaks[length(breaks)] <- max_val + 0.001
+      }
+    }
+    
+    # Create categorical variable
+    result <- cut(x, breaks = breaks, labels = labels, include.lowest = TRUE, right = TRUE)
+    
+    return(result)
+  }, error = function(e) {
+    stop(paste("Error in create_categorical:", e$message))
+  })
 }
 
 perform_normality_test <- function(data, variable) {
@@ -753,15 +782,36 @@ server <- function(input, output, session) {
       req(input$var_to_categorize, input$n_categories, input$category_labels)
       req(values$current_data)
       
+      # Validate inputs
+      if (is.null(input$var_to_categorize) || input$var_to_categorize == "") {
+        showNotification("Pilih variabel terlebih dahulu!", type = "warning")
+        return()
+      }
+      
+      if (input$n_categories < 2 || input$n_categories > 10) {
+        showNotification("Jumlah kategori harus antara 2-10!", type = "warning")
+        return()
+      }
+      
       labels <- trimws(strsplit(input$category_labels, ",")[[1]])
       if (length(labels) != input$n_categories) {
-        showNotification("Jumlah label harus sama dengan jumlah kategori!", type = "error")
+        showNotification("Jumlah label harus sama dengan jumlah kategori!", type = "warning")
         return()
       }
       
       var_data <- values$current_data[[input$var_to_categorize]]
-      if (is.null(var_data) || all(is.na(var_data))) {
-        showNotification("Data tidak valid untuk kategorisasi!", type = "error")
+      if (is.null(var_data)) {
+        showNotification("Variabel tidak ditemukan!", type = "error")
+        return()
+      }
+      
+      if (all(is.na(var_data))) {
+        showNotification("Variabel tidak memiliki data valid!", type = "error")
+        return()
+      }
+      
+      if (!is.numeric(var_data)) {
+        showNotification("Hanya variabel numerik yang dapat dikategorisasi!", type = "error")
         return()
       }
       
@@ -769,7 +819,7 @@ server <- function(input, output, session) {
       categorical_var <- tryCatch({
         create_categorical(var_data, input$n_categories, labels)
       }, error = function(e) {
-        showNotification(paste("Error creating categories:", e$message), type = "error")
+        showNotification(paste("Gagal membuat kategori:", e$message), type = "error")
         return(NULL)
       })
       
@@ -784,14 +834,19 @@ server <- function(input, output, session) {
       cat_vars <- names(values$current_data)[sapply(values$current_data, function(x) is.factor(x) || is.character(x))]
       cat_vars <- cat_vars[cat_vars != "DISTRICTCODE"]  # Exclude ID variables
       
-      updateSelectInput(session, "group_var_desc", choices = cat_vars)
-      updateSelectInput(session, "group_var_norm", choices = cat_vars)
-      updateSelectInput(session, "homo_group_var", choices = cat_vars)
-      updateSelectInput(session, "prop_var", choices = cat_vars)
-      updateSelectInput(session, "ttest_group", choices = cat_vars)
-      updateSelectInput(session, "anova_indep_var", choices = cat_vars)
-      updateSelectInput(session, "anova2_factor1", choices = cat_vars)
-      updateSelectInput(session, "anova2_factor2", choices = cat_vars)
+      # Update all categorical variable inputs
+      tryCatch({
+        updateSelectInput(session, "group_var_desc", choices = cat_vars)
+        updateSelectInput(session, "group_var_norm", choices = cat_vars)
+        updateSelectInput(session, "homo_group_var", choices = cat_vars)
+        updateSelectInput(session, "prop_var", choices = cat_vars)
+        updateSelectInput(session, "ttest_group", choices = cat_vars)
+        updateSelectInput(session, "anova_indep_var", choices = cat_vars)
+        updateSelectInput(session, "anova2_factor1", choices = cat_vars)
+        updateSelectInput(session, "anova2_factor2", choices = cat_vars)
+      }, error = function(e) {
+        # Silently continue if update fails
+      })
       
       showNotification("Kategorisasi berhasil dibuat!", type = "message")
     }, error = function(e) {
