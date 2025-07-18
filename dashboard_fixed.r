@@ -734,15 +734,19 @@ server <- function(input, output, session) {
         updateSelectInput(session, "var_test_var", choices = numeric_vars)
         updateSelectInput(session, "ttest_var", choices = numeric_vars)
         
-        # Initialize categorical variable choices (empty initially)
-        updateSelectInput(session, "group_var_desc", choices = cat_vars)
-        updateSelectInput(session, "group_var_norm", choices = cat_vars)
-        updateSelectInput(session, "homo_group_var", choices = cat_vars)
-        updateSelectInput(session, "prop_var", choices = cat_vars)
-        updateSelectInput(session, "ttest_group", choices = cat_vars)
-        updateSelectInput(session, "anova_indep_var", choices = cat_vars)
-        updateSelectInput(session, "anova2_factor1", choices = cat_vars)
-        updateSelectInput(session, "anova2_factor2", choices = cat_vars)
+        # Initialize categorical variable choices (empty initially, with placeholder)
+        if (length(cat_vars) == 0) {
+          cat_vars <- c("(Belum ada variabel kategorik)" = "")
+        }
+        
+        updateSelectInput(session, "group_var_desc", choices = cat_vars, selected = "")
+        updateSelectInput(session, "group_var_norm", choices = cat_vars, selected = "")
+        updateSelectInput(session, "homo_group_var", choices = cat_vars, selected = "")
+        updateSelectInput(session, "prop_var", choices = cat_vars, selected = "")
+        updateSelectInput(session, "ttest_group", choices = cat_vars, selected = "")
+        updateSelectInput(session, "anova_indep_var", choices = cat_vars, selected = "")
+        updateSelectInput(session, "anova2_factor1", choices = cat_vars, selected = "")
+        updateSelectInput(session, "anova2_factor2", choices = cat_vars, selected = "")
         
         showNotification("Data berhasil dimuat!", type = "default")
       }
@@ -834,16 +838,21 @@ server <- function(input, output, session) {
       cat_vars <- names(values$current_data)[sapply(values$current_data, function(x) is.factor(x) || is.character(x))]
       cat_vars <- cat_vars[cat_vars != "DISTRICTCODE"]  # Exclude ID variables
       
+      # Add placeholder if no categorical variables exist
+      if (length(cat_vars) == 0) {
+        cat_vars <- c("(Belum ada variabel kategorik)" = "")
+      }
+      
       # Update all categorical variable inputs
       tryCatch({
-        updateSelectInput(session, "group_var_desc", choices = cat_vars)
-        updateSelectInput(session, "group_var_norm", choices = cat_vars)
-        updateSelectInput(session, "homo_group_var", choices = cat_vars)
-        updateSelectInput(session, "prop_var", choices = cat_vars)
-        updateSelectInput(session, "ttest_group", choices = cat_vars)
-        updateSelectInput(session, "anova_indep_var", choices = cat_vars)
-        updateSelectInput(session, "anova2_factor1", choices = cat_vars)
-        updateSelectInput(session, "anova2_factor2", choices = cat_vars)
+        updateSelectInput(session, "group_var_desc", choices = cat_vars, selected = if(length(cat_vars) > 1) cat_vars[1] else "")
+        updateSelectInput(session, "group_var_norm", choices = cat_vars, selected = "")
+        updateSelectInput(session, "homo_group_var", choices = cat_vars, selected = "")
+        updateSelectInput(session, "prop_var", choices = cat_vars, selected = if(length(cat_vars) > 1) cat_vars[1] else "")
+        updateSelectInput(session, "ttest_group", choices = cat_vars, selected = "")
+        updateSelectInput(session, "anova_indep_var", choices = cat_vars, selected = "")
+        updateSelectInput(session, "anova2_factor1", choices = cat_vars, selected = "")
+        updateSelectInput(session, "anova2_factor2", choices = cat_vars, selected = "")
       }, error = function(e) {
         # Silently continue if update fails
       })
@@ -982,33 +991,71 @@ server <- function(input, output, session) {
       req(input$desc_var)
       req(values$current_data)
       
-      if (input$by_group && !is.null(input$group_var_desc) && input$group_var_desc != "") {
+      if (input$by_group && !is.null(input$group_var_desc) && input$group_var_desc != "" && input$group_var_desc != "NULL") {
         group_data <- values$current_data[[input$group_var_desc]]
         numeric_data <- values$current_data[[input$desc_var]]
         
-        if (is.null(group_data) || is.null(numeric_data)) {
-          cat("Data tidak tersedia untuk analisis berdasarkan kelompok")
+        if (is.null(group_data) || is.null(numeric_data) || all(is.na(group_data))) {
+          cat("Data tidak tersedia untuk analisis berdasarkan kelompok\n")
+          cat("Menampilkan statistik deskriptif umum:\n\n")
+          print(summary(values$current_data[[input$desc_var]]))
           return()
         }
         
+        cat("STATISTIK DESKRIPTIF BERDASARKAN KELOMPOK\n")
+        cat("=========================================\n\n")
+        cat("Variabel:", input$desc_var, "\n")
+        cat("Kelompok:", input$group_var_desc, "\n\n")
+        
         # Create summary by group
-        by(numeric_data, group_data, function(x) {
+        result <- by(numeric_data, group_data, function(x) {
+          valid_x <- x[!is.na(x)]
+          if (length(valid_x) == 0) {
+            return(c(N = 0, Mean = NA, SD = NA, Min = NA, Q1 = NA, Median = NA, Q3 = NA, Max = NA))
+          }
+          
           c(
-            N = length(x[!is.na(x)]),
-            Mean = mean(x, na.rm = TRUE),
-            SD = sd(x, na.rm = TRUE),
-            Min = min(x, na.rm = TRUE),
-            Q1 = quantile(x, 0.25, na.rm = TRUE),
-            Median = median(x, na.rm = TRUE),
-            Q3 = quantile(x, 0.75, na.rm = TRUE),
-            Max = max(x, na.rm = TRUE)
+            N = length(valid_x),
+            Mean = round(mean(valid_x, na.rm = TRUE), 3),
+            SD = round(sd(valid_x, na.rm = TRUE), 3),
+            Min = round(min(valid_x, na.rm = TRUE), 3),
+            Q1 = round(quantile(valid_x, 0.25, na.rm = TRUE), 3),
+            Median = round(median(valid_x, na.rm = TRUE), 3),
+            Q3 = round(quantile(valid_x, 0.75, na.rm = TRUE), 3),
+            Max = round(max(valid_x, na.rm = TRUE), 3)
           )
         })
+        
+        # Print results
+        for (group_name in names(result)) {
+          cat("Kelompok:", group_name, "\n")
+          stats <- result[[group_name]]
+          for (i in 1:length(stats)) {
+            cat("  ", names(stats)[i], ":", stats[i], "\n")
+          }
+          cat("\n")
+        }
       } else {
-        summary(values$current_data[[input$desc_var]])
+        cat("STATISTIK DESKRIPTIF\n")
+        cat("====================\n\n")
+        cat("Variabel:", input$desc_var, "\n\n")
+        print(summary(values$current_data[[input$desc_var]]))
+        
+        # Additional statistics
+        x <- values$current_data[[input$desc_var]]
+        valid_x <- x[!is.na(x)]
+        if (length(valid_x) > 0) {
+          cat("\nStatistik Tambahan:\n")
+          cat("N (valid)    :", length(valid_x), "\n")
+          cat("N (missing)  :", sum(is.na(x)), "\n")
+          cat("Standard Dev :", round(sd(valid_x), 3), "\n")
+          cat("Variance     :", round(var(valid_x), 3), "\n")
+          cat("Skewness     :", round((mean(valid_x) - median(valid_x)) / sd(valid_x), 3), "\n")
+        }
       }
     }, error = function(e) {
-      cat("Error dalam analisis deskriptif:", e$message)
+      cat("Error dalam analisis deskriptif:", e$message, "\n")
+      cat("Silakan periksa data atau pilihan variabel yang digunakan.")
     })
   })
   
@@ -1017,20 +1064,56 @@ server <- function(input, output, session) {
       req(input$desc_var)
       req(values$current_data)
       
-      if (input$by_group && !is.null(input$group_var_desc) && input$group_var_desc != "") {
-        ggplot(values$current_data, aes_string(x = input$desc_var, fill = input$group_var_desc)) +
-          geom_histogram(bins = 30, alpha = 0.7, position = "identity") +
-          facet_wrap(as.formula(paste("~", input$group_var_desc))) +
-          labs(title = paste("Histogram", input$desc_var, "by", input$group_var_desc)) +
-          theme_minimal()
+      # Validate data exists
+      if (is.null(values$current_data[[input$desc_var]])) {
+        plot(1, 1, main = "Variabel tidak ditemukan")
+        return()
+      }
+      
+      data_to_plot <- values$current_data
+      numeric_var <- data_to_plot[[input$desc_var]]
+      
+      # Remove NA values for plotting
+      data_to_plot <- data_to_plot[!is.na(numeric_var), ]
+      
+      if (nrow(data_to_plot) == 0) {
+        plot(1, 1, main = "Tidak ada data valid untuk ditampilkan")
+        return()
+      }
+      
+      if (input$by_group && !is.null(input$group_var_desc) && 
+          input$group_var_desc != "" && input$group_var_desc != "NULL" &&
+          input$group_var_desc %in% names(data_to_plot)) {
+        
+        group_var <- data_to_plot[[input$group_var_desc]]
+        
+        if (all(is.na(group_var))) {
+          # If group variable is all NA, plot without grouping
+          ggplot(data_to_plot, aes_string(x = input$desc_var)) +
+            geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7) +
+            labs(title = paste("Histogram -", input$desc_var, "(No valid grouping)")) +
+            theme_minimal()
+        } else {
+          # Remove rows where group variable is NA
+          data_to_plot <- data_to_plot[!is.na(group_var), ]
+          
+          ggplot(data_to_plot, aes_string(x = input$desc_var, fill = input$group_var_desc)) +
+            geom_histogram(bins = 30, alpha = 0.7, position = "identity") +
+            facet_wrap(as.formula(paste("~", input$group_var_desc))) +
+            labs(title = paste("Histogram", input$desc_var, "by", input$group_var_desc)) +
+            theme_minimal() +
+            theme(legend.position = "bottom")
+        }
       } else {
-        ggplot(values$current_data, aes_string(x = input$desc_var)) +
+        ggplot(data_to_plot, aes_string(x = input$desc_var)) +
           geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7) +
-          labs(title = paste("Histogram -", input$desc_var)) +
+          labs(title = paste("Histogram -", input$desc_var),
+               x = input$desc_var, y = "Frequency") +
           theme_minimal()
       }
     }, error = function(e) {
-      plot(1, 1, main = paste("Error:", e$message))
+      plot(1, 1, main = paste("Error dalam histogram:", e$message), 
+           sub = "Periksa data atau pilihan variabel")
     })
   })
   
@@ -1039,24 +1122,64 @@ server <- function(input, output, session) {
       req(input$desc_var)
       req(values$current_data)
       
-      if (input$by_group && !is.null(input$group_var_desc) && input$group_var_desc != "") {
-        ggplot(values$current_data, aes_string(x = input$group_var_desc, y = input$desc_var, fill = input$group_var_desc)) +
-          geom_boxplot(alpha = 0.7) +
-          labs(title = paste("Box Plot", input$desc_var, "by", input$group_var_desc)) +
-          theme_minimal() +
-          theme(axis.text.x = element_text(angle = 45, hjust = 1))
-      } else {
-        temp_data <- values$current_data
-        temp_data$dummy_group <- "All Data"
+      # Validate data exists
+      if (is.null(values$current_data[[input$desc_var]])) {
+        plot(1, 1, main = "Variabel tidak ditemukan")
+        return()
+      }
+      
+      data_to_plot <- values$current_data
+      numeric_var <- data_to_plot[[input$desc_var]]
+      
+      # Remove NA values for plotting
+      data_to_plot <- data_to_plot[!is.na(numeric_var), ]
+      
+      if (nrow(data_to_plot) == 0) {
+        plot(1, 1, main = "Tidak ada data valid untuk ditampilkan")
+        return()
+      }
+      
+      if (input$by_group && !is.null(input$group_var_desc) && 
+          input$group_var_desc != "" && input$group_var_desc != "NULL" &&
+          input$group_var_desc %in% names(data_to_plot)) {
         
-        ggplot(temp_data, aes_string(x = "dummy_group", y = input$desc_var)) +
+        group_var <- data_to_plot[[input$group_var_desc]]
+        
+        if (all(is.na(group_var))) {
+          # If group variable is all NA, create single boxplot
+          data_to_plot$dummy_group <- "All Data"
+          
+          ggplot(data_to_plot, aes_string(x = "dummy_group", y = input$desc_var)) +
+            geom_boxplot(fill = "lightblue", alpha = 0.7) +
+            labs(title = paste("Box Plot -", input$desc_var, "(No valid grouping)"), 
+                 x = "", y = input$desc_var) +
+            theme_minimal() +
+            theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+        } else {
+          # Remove rows where group variable is NA
+          data_to_plot <- data_to_plot[!is.na(group_var), ]
+          
+          ggplot(data_to_plot, aes_string(x = input$group_var_desc, y = input$desc_var, fill = input$group_var_desc)) +
+            geom_boxplot(alpha = 0.7) +
+            labs(title = paste("Box Plot", input$desc_var, "by", input$group_var_desc),
+                 x = input$group_var_desc, y = input$desc_var) +
+            theme_minimal() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                  legend.position = "none")
+        }
+      } else {
+        data_to_plot$dummy_group <- "All Data"
+        
+        ggplot(data_to_plot, aes_string(x = "dummy_group", y = input$desc_var)) +
           geom_boxplot(fill = "lightblue", alpha = 0.7) +
-          labs(title = paste("Box Plot -", input$desc_var), x = "") +
+          labs(title = paste("Box Plot -", input$desc_var), 
+               x = "", y = input$desc_var) +
           theme_minimal() +
           theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
       }
     }, error = function(e) {
-      plot(1, 1, main = paste("Error:", e$message))
+      plot(1, 1, main = paste("Error dalam boxplot:", e$message),
+           sub = "Periksa data atau pilihan variabel")
     })
   })
   
