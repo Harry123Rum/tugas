@@ -1,0 +1,45 @@
+# R Package Requirements for SoVi Explorer Pro Dashboard
+# Install these packages before running the dashboard
+
+# Core Shiny Framework
+shiny
+shinydashboard
+
+# Data Manipulation and Tables
+DT
+dplyr
+
+# Visualization
+ggplot2
+plotly
+corrplot
+VIM
+
+# Interactive Maps
+leaflet
+
+# Statistical Analysis
+car
+broom
+psych
+cluster
+factoextra
+
+# Report Generation
+rmarkdown
+knitr
+flextable
+officer
+
+# Data Export
+downloadthis
+openxlsx
+
+# Additional Utilities
+reshape2
+
+# Installation Command (run in R):
+# install.packages(c("shiny", "shinydashboard", "DT", "plotly", "ggplot2", 
+#                    "leaflet", "corrplot", "car", "broom", "psych", "VIM", 
+#                    "cluster", "factoextra", "rmarkdown", "knitr", "downloadthis", 
+#                    "openxlsx", "flextable", "officer", "reshape2"))
