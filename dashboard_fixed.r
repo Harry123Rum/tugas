@@ -73,46 +73,38 @@ load_data <- function() {
 
 # Helper functions
 create_categorical <- function(x, n_categories = 3, labels = c("Rendah", "Sedang", "Tinggi")) {
-  tryCatch({
-    # Validate inputs
-    if (length(labels) != n_categories) {
-      labels <- paste("Kategori", 1:n_categories)
+  # Simple robust categorization function
+  if (length(labels) != n_categories) {
+    labels <- paste("Kategori", 1:n_categories)
+  }
+  
+  # Remove NA values
+  x_clean <- x[!is.na(x)]
+  
+  if (length(x_clean) == 0) {
+    return(rep(NA, length(x)))
+  }
+  
+  # Use quantiles for breaks
+  breaks <- quantile(x_clean, probs = seq(0, 1, length.out = n_categories + 1), na.rm = TRUE)
+  
+  # Handle identical values
+  if (length(unique(breaks)) < length(breaks)) {
+    min_val <- min(x_clean)
+    max_val <- max(x_clean)
+    breaks <- seq(min_val, max_val, length.out = n_categories + 1)
+    if (min_val == max_val) {
+      return(factor(rep(labels[1], length(x)), levels = labels))
     }
-    
-    # Remove NA values for quantile calculation
-    x_clean <- x[!is.na(x)]
-    
-    if (length(x_clean) == 0) {
-      stop("No valid data for categorization")
-    }
-    
-    # Calculate breaks using quantiles
-    breaks <- quantile(x_clean, probs = seq(0, 1, length.out = n_categories + 1), na.rm = TRUE)
-    
-    # Handle case where quantiles are identical (all values are the same)
-    if (length(unique(breaks)) < length(breaks)) {
-      min_val <- min(x_clean, na.rm = TRUE)
-      max_val <- max(x_clean, na.rm = TRUE)
-      
-      if (min_val == max_val) {
-        # All values are the same, create a single category
-        result <- factor(rep(labels[1], length(x)), levels = labels[1])
-        return(result)
-      } else {
-        # Create equal-width intervals
-        breaks <- seq(min_val, max_val, length.out = n_categories + 1)
-        breaks[1] <- min_val - 0.001  # Ensure all values are included
-        breaks[length(breaks)] <- max_val + 0.001
-      }
-    }
-    
-    # Create categorical variable
-    result <- cut(x, breaks = breaks, labels = labels, include.lowest = TRUE, right = TRUE)
-    
-    return(result)
-  }, error = function(e) {
-    stop(paste("Error in create_categorical:", e$message))
-  })
+  }
+  
+  # Make sure all values are included
+  breaks[1] <- breaks[1] - 0.001
+  breaks[length(breaks)] <- breaks[length(breaks)] + 0.001
+  
+  # Create categorical variable
+  result <- cut(x, breaks = breaks, labels = labels, include.lowest = TRUE)
+  return(result)
 }
 
 perform_normality_test <- function(data, variable) {
@@ -780,251 +772,116 @@ server <- function(input, output, session) {
     })
   })
   
-  # CATEGORIZATION with robust error handling
+  # CATEGORIZATION - Simple and focused
   observeEvent(input$create_categorical, {
-    tryCatch({
-      req(input$var_to_categorize, input$n_categories, input$category_labels)
-      req(values$current_data)
-      
-      # Validate inputs
-      if (is.null(input$var_to_categorize) || input$var_to_categorize == "") {
-        showNotification("Pilih variabel terlebih dahulu!", type = "warning")
-        return()
-      }
-      
-      if (input$n_categories < 2 || input$n_categories > 10) {
-        showNotification("Jumlah kategori harus antara 2-10!", type = "warning")
-        return()
-      }
-      
-      labels <- trimws(strsplit(input$category_labels, ",")[[1]])
-      if (length(labels) != input$n_categories) {
-        showNotification("Jumlah label harus sama dengan jumlah kategori!", type = "warning")
-        return()
-      }
-      
-      var_data <- values$current_data[[input$var_to_categorize]]
-      if (is.null(var_data)) {
-        showNotification("Variabel tidak ditemukan!", type = "error")
-        return()
-      }
-      
-      if (all(is.na(var_data))) {
-        showNotification("Variabel tidak memiliki data valid!", type = "error")
-        return()
-      }
-      
-      if (!is.numeric(var_data)) {
-        showNotification("Hanya variabel numerik yang dapat dikategorisasi!", type = "error")
-        return()
-      }
-      
-      # Create categorical variable with proper error handling
-      categorical_var <- tryCatch({
-        create_categorical(var_data, input$n_categories, labels)
-      }, error = function(e) {
-        showNotification(paste("Gagal membuat kategori:", e$message), type = "error")
-        return(NULL)
-      })
-      
-      if (is.null(categorical_var)) {
-        return()
-      }
-      
-      new_var_name <- paste0(input$var_to_categorize, "_cat")
-      values$current_data[[new_var_name]] <- categorical_var
-      
-      # Update categorical choices
-      cat_vars <- names(values$current_data)[sapply(values$current_data, function(x) is.factor(x) || is.character(x))]
-      cat_vars <- cat_vars[cat_vars != "DISTRICTCODE"]  # Exclude ID variables
-      
-      # Add placeholder if no categorical variables exist
-      if (length(cat_vars) == 0) {
-        cat_vars <- c("(Belum ada variabel kategorik)" = "")
-      }
-      
-      # Update all categorical variable inputs
-      tryCatch({
-        updateSelectInput(session, "group_var_desc", choices = cat_vars, selected = if(length(cat_vars) > 1) cat_vars[1] else "")
-        updateSelectInput(session, "group_var_norm", choices = cat_vars, selected = "")
-        updateSelectInput(session, "homo_group_var", choices = cat_vars, selected = "")
-        updateSelectInput(session, "prop_var", choices = cat_vars, selected = if(length(cat_vars) > 1) cat_vars[1] else "")
-        updateSelectInput(session, "ttest_group", choices = cat_vars, selected = "")
-        updateSelectInput(session, "anova_indep_var", choices = cat_vars, selected = "")
-        updateSelectInput(session, "anova2_factor1", choices = cat_vars, selected = "")
-        updateSelectInput(session, "anova2_factor2", choices = cat_vars, selected = "")
-      }, error = function(e) {
-        # Silently continue if update fails
-      })
-      
-      showNotification(paste("✅ Kategorisasi berhasil dibuat untuk variabel:", input$var_to_categorize), type = "default")
-      
-      # Debug information
-      cat("DEBUG: Kategorisasi berhasil\n")
-      cat("- Variabel:", input$var_to_categorize, "\n")
-      cat("- Nama variabel baru:", new_var_name, "\n")
-      cat("- Jumlah kategori:", length(unique(categorical_var[!is.na(categorical_var)])), "\n")
-      cat("- Data points:", length(categorical_var), "\n")
-    }, error = function(e) {
-      showNotification(paste("Error dalam kategorisasi:", e$message), type = "error")
-    })
+    # Basic validation
+    if (is.null(input$var_to_categorize) || input$var_to_categorize == "") {
+      showNotification("Pilih variabel terlebih dahulu!", type = "warning")
+      return()
+    }
+    
+    if (is.null(values$current_data)) {
+      showNotification("Data belum dimuat!", type = "error")
+      return()
+    }
+    
+    # Get labels
+    labels <- trimws(strsplit(input$category_labels, ",")[[1]])
+    if (length(labels) != input$n_categories) {
+      showNotification("Jumlah label harus sama dengan jumlah kategori!", type = "warning")
+      return()
+    }
+    
+    # Get variable data
+    var_data <- values$current_data[[input$var_to_categorize]]
+    if (is.null(var_data) || !is.numeric(var_data)) {
+      showNotification("Pilih variabel numerik yang valid!", type = "error")
+      return()
+    }
+    
+    # Create categorical variable
+    categorical_var <- create_categorical(var_data, input$n_categories, labels)
+    new_var_name <- paste0(input$var_to_categorize, "_cat")
+    values$current_data[[new_var_name]] <- categorical_var
+    
+    # Update dropdown choices
+    cat_vars <- names(values$current_data)[sapply(values$current_data, function(x) is.factor(x) || is.character(x))]
+    cat_vars <- cat_vars[cat_vars != "DISTRICTCODE"]
+    
+    if (length(cat_vars) > 0) {
+      updateSelectInput(session, "group_var_desc", choices = cat_vars)
+      updateSelectInput(session, "group_var_norm", choices = cat_vars)
+      updateSelectInput(session, "homo_group_var", choices = cat_vars)
+      updateSelectInput(session, "prop_var", choices = cat_vars)
+      updateSelectInput(session, "ttest_group", choices = cat_vars)
+      updateSelectInput(session, "anova_indep_var", choices = cat_vars)
+      updateSelectInput(session, "anova2_factor1", choices = cat_vars)
+      updateSelectInput(session, "anova2_factor2", choices = cat_vars)
+    }
+    
+    showNotification("Kategorisasi berhasil dibuat!", type = "default")
   })
   
   output$categorization_plot <- renderPlot({
-    tryCatch({
-      req(input$var_to_categorize)
-      req(values$current_data)
+    if (is.null(input$var_to_categorize) || is.null(values$current_data)) {
+      plot(1, 1, main = "Pilih variabel dan klik 'Buat Kategorisasi'")
+      return()
+    }
+    
+    var_name <- input$var_to_categorize
+    cat_var_name <- paste0(var_name, "_cat")
+    
+    if (cat_var_name %in% names(values$current_data)) {
+      # Data exists, create comparison plots
+      original_data <- values$current_data[[var_name]]
+      categorical_data <- values$current_data[[cat_var_name]]
       
-      var_name <- input$var_to_categorize
-      cat_var_name <- paste0(var_name, "_cat")
+      # Create side-by-side plots
+      par(mfrow = c(1, 2))
       
-      # Check if data exists
-      if (is.null(values$current_data[[var_name]])) {
-        plot(1, 1, main = "Variabel tidak ditemukan dalam data", 
-             sub = "Pilih variabel yang valid")
-        return()
-      }
+      # Plot 1: Original histogram
+      hist(original_data, 
+           main = "Distribusi Asli", 
+           xlab = var_name, 
+           col = "lightblue", 
+           border = "white")
       
-      if (cat_var_name %in% names(values$current_data)) {
-        # Get data for plotting
-        original_data <- values$current_data[[var_name]]
-        categorical_data <- values$current_data[[cat_var_name]]
-        
-        # Remove NA values for cleaner plotting
-        valid_indices <- !is.na(original_data)
-        original_clean <- original_data[valid_indices]
-        categorical_clean <- categorical_data[valid_indices]
-        
-        if (length(original_clean) == 0) {
-          plot(1, 1, main = "Tidak ada data valid untuk ditampilkan")
-          return()
-        }
-        
-        # Create data frames for ggplot
-        df_original <- data.frame(value = original_clean)
-        df_categorical <- data.frame(category = categorical_clean)
-        
-        # Plot 1: Original distribution (histogram)
-        p1 <- ggplot(df_original, aes(x = value)) +
-          geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7, color = "white") +
-          labs(title = "Distribusi Asli", 
-               x = var_name, 
-               y = "Frekuensi") +
-          theme_minimal() +
-          theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
-        
-        # Plot 2: Categorical distribution (bar plot)
-        p2 <- ggplot(df_categorical, aes(x = category)) +
-          geom_bar(fill = "coral", alpha = 0.7, color = "white") +
-          labs(title = "Distribusi Kategorik", 
-               x = paste(var_name, "(Kategorik)"), 
-               y = "Frekuensi") +
-          theme_minimal() +
-          theme(axis.text.x = element_text(angle = 45, hjust = 1),
-                plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
-        
-        # Arrange plots side by side
-        grid.arrange(p1, p2, ncol = 2, 
-                     top = paste("Perbandingan Distribusi:", var_name))
-      } else {
-        # Show instruction if categorization hasn't been done
-        plot(1, 1, main = "Klik 'Buat Kategorisasi' untuk melihat perbandingan distribusi", 
-             sub = paste("Variabel dipilih:", var_name),
-             col = "blue", pch = 19, cex = 2)
-        text(1, 0.8, "👆 Tekan tombol hijau di sebelah kiri", 
-             col = "darkgreen", cex = 1.2, font = 2)
-      }
-    }, error = function(e) {
-      plot(1, 1, main = "Error dalam membuat plot", 
-           sub = paste("Error:", e$message), 
-           col = "red", pch = 4, cex = 2)
-    })
+      # Plot 2: Categorical bar plot
+      barplot(table(categorical_data), 
+              main = "Distribusi Kategorik",
+              xlab = "Kategori",
+              col = "lightcoral",
+              border = "white")
+    } else {
+      plot(1, 1, main = "Buat kategorisasi terlebih dahulu", 
+           sub = "Klik tombol 'Buat Kategorisasi'")
+    }
   })
   
   output$category_table <- DT::renderDataTable({
-    tryCatch({
-      req(input$var_to_categorize)
+    if (is.null(input$var_to_categorize) || is.null(values$current_data)) {
+      return(DT::datatable(data.frame(Info = "Pilih variabel dan buat kategorisasi")))
+    }
+    
+    cat_var_name <- paste0(input$var_to_categorize, "_cat")
+    
+    if (cat_var_name %in% names(values$current_data)) {
+      # Create frequency table
+      categorical_data <- values$current_data[[cat_var_name]]
+      freq_table <- table(categorical_data)
+      prop_table <- prop.table(freq_table)
       
-      if (is.null(values$current_data)) {
-        return(DT::datatable(data.frame(Info = "Data belum dimuat")))
-      }
-      
-      cat_var_name <- paste0(input$var_to_categorize, "_cat")
-      
-      if (cat_var_name %in% names(values$current_data)) {
-        categorical_data <- values$current_data[[cat_var_name]]
-        
-        if (all(is.na(categorical_data))) {
-          return(DT::datatable(data.frame(Info = "Tidak ada data kategorik yang valid")))
-        }
-        
-        # Create frequency table
-        freq_table <- table(categorical_data, useNA = "ifany")
-        prop_table <- prop.table(freq_table)
-        
-        # Create result data frame
-        result <- data.frame(
-          Kategori = names(freq_table),
-          Frekuensi = as.numeric(freq_table),
-          Proporsi = round(as.numeric(prop_table), 4),
-          Persen = round(as.numeric(prop_table) * 100, 2),
-          stringsAsFactors = FALSE
-        )
-        
-        # Add total row
-        total_row <- data.frame(
-          Kategori = "TOTAL",
-          Frekuensi = sum(result$Frekuensi),
-          Proporsi = 1.0000,
-          Persen = 100.00,
-          stringsAsFactors = FALSE
-        )
-        
-        result <- rbind(result, total_row)
-        
-        # Create datatable with formatting
-        DT::datatable(result, 
-                      options = list(
-                        dom = 't',
-                        pageLength = -1,
-                        ordering = FALSE,
-                        columnDefs = list(
-                          list(className = 'dt-center', targets = 1:3),
-                          list(className = 'dt-right', targets = 1:3)
-                        )
-                      ),
-                      rownames = FALSE) %>%
-          DT::formatRound(columns = c("Proporsi", "Persen"), digits = 2) %>%
-          DT::formatStyle("Kategori", 
-                          target = "row",
-                          backgroundColor = DT::styleEqual("TOTAL", "#f0f0f0")) %>%
-          DT::formatStyle("Kategori", 
-                          fontWeight = DT::styleEqual("TOTAL", "bold"))
-      } else {
-        # Show instruction message
-        instruction_df <- data.frame(
-          Info = c(
-            "📌 Cara menggunakan kategorisasi:",
-            "1. Pilih variabel numerik dari dropdown",
-            "2. Atur jumlah kategori (2-10)",
-            "3. Atur label kategori (pisahkan dengan koma)",
-            "4. Klik tombol 'Buat Kategorisasi'",
-            "5. Tabel frekuensi akan muncul di sini"
-          )
-        )
-        
-        DT::datatable(instruction_df, 
-                      options = list(dom = 't', ordering = FALSE),
-                      rownames = FALSE,
-                      colnames = "")
-      }
-    }, error = function(e) {
-      error_df <- data.frame(
-        Error = paste("Error dalam membuat tabel:", e$message),
-        Solution = "Coba lakukan kategorisasi ulang atau pilih variabel lain"
+      result <- data.frame(
+        Kategori = names(freq_table),
+        Frekuensi = as.numeric(freq_table),
+        Proporsi = round(as.numeric(prop_table), 3),
+        Persen = round(as.numeric(prop_table) * 100, 1)
       )
-      DT::datatable(error_df, options = list(dom = 't'), rownames = FALSE)
-    })
+      
+      DT::datatable(result, options = list(dom = 't'), rownames = FALSE)
+    } else {
+      DT::datatable(data.frame(Info = "Buat kategorisasi terlebih dahulu"))
+    }
   })
   
   # OUTLIER DETECTION
