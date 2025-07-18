@@ -73,38 +73,34 @@ load_data <- function() {
 
 # Helper functions
 create_categorical <- function(x, n_categories = 3, labels = c("Rendah", "Sedang", "Tinggi")) {
-  # Simple robust categorization function
+  # Clean labels
   if (length(labels) != n_categories) {
     labels <- paste("Kategori", 1:n_categories)
   }
   
-  # Remove NA values
+  # Handle case with no valid data
   x_clean <- x[!is.na(x)]
-  
   if (length(x_clean) == 0) {
-    return(rep(NA, length(x)))
+    return(factor(rep(NA, length(x)), levels = labels))
   }
   
   # Use quantiles for breaks
   breaks <- quantile(x_clean, probs = seq(0, 1, length.out = n_categories + 1), na.rm = TRUE)
   
-  # Handle identical values
+  # Handle case where all values are the same
   if (length(unique(breaks)) < length(breaks)) {
-    min_val <- min(x_clean)
-    max_val <- max(x_clean)
-    breaks <- seq(min_val, max_val, length.out = n_categories + 1)
-    if (min_val == max_val) {
-      return(factor(rep(labels[1], length(x)), levels = labels))
-    }
+    return(factor(rep(labels[1], length(x)), levels = labels))
   }
   
-  # Make sure all values are included
+  # Adjust breaks to include all values
   breaks[1] <- breaks[1] - 0.001
   breaks[length(breaks)] <- breaks[length(breaks)] + 0.001
   
-  # Create categorical variable
+  # Create categorical variable - ALWAYS return as factor
   result <- cut(x, breaks = breaks, labels = labels, include.lowest = TRUE)
-  return(result)
+  
+  # Ensure it's a proper factor with correct levels
+  return(factor(result, levels = labels))
 }
 
 perform_normality_test <- function(data, variable) {
@@ -772,7 +768,7 @@ server <- function(input, output, session) {
     })
   })
   
-  # CATEGORIZATION - Simple and focused
+  # CATEGORIZATION - Create new variable for other menus
   observeEvent(input$create_categorical, {
     # Basic validation
     if (is.null(input$var_to_categorize) || input$var_to_categorize == "") {
@@ -802,24 +798,40 @@ server <- function(input, output, session) {
     # Create categorical variable
     categorical_var <- create_categorical(var_data, input$n_categories, labels)
     new_var_name <- paste0(input$var_to_categorize, "_cat")
-    values$current_data[[new_var_name]] <- categorical_var
     
-    # Update dropdown choices
-    cat_vars <- names(values$current_data)[sapply(values$current_data, function(x) is.factor(x) || is.character(x))]
-    cat_vars <- cat_vars[cat_vars != "DISTRICTCODE"]
+    # IMPORTANT: Make sure it's a factor (not character) for proper recognition
+    values$current_data[[new_var_name]] <- as.factor(categorical_var)
     
-    if (length(cat_vars) > 0) {
-      updateSelectInput(session, "group_var_desc", choices = cat_vars)
-      updateSelectInput(session, "group_var_norm", choices = cat_vars)
-      updateSelectInput(session, "homo_group_var", choices = cat_vars)
-      updateSelectInput(session, "prop_var", choices = cat_vars)
-      updateSelectInput(session, "ttest_group", choices = cat_vars)
-      updateSelectInput(session, "anova_indep_var", choices = cat_vars)
-      updateSelectInput(session, "anova2_factor1", choices = cat_vars)
-      updateSelectInput(session, "anova2_factor2", choices = cat_vars)
+    # Force refresh: Get all categorical variables
+    all_cat_vars <- c()
+    for (col_name in names(values$current_data)) {
+      if (is.factor(values$current_data[[col_name]]) || 
+          (is.character(values$current_data[[col_name]]) && col_name != "DISTRICTCODE")) {
+        all_cat_vars <- c(all_cat_vars, col_name)
+      }
     }
     
-    showNotification("Kategorisasi berhasil dibuat!", type = "default")
+    # Update ALL dropdown menus with categorical variables
+    if (length(all_cat_vars) > 0) {
+      # Eksplorasi Data - Statistik Deskriptif
+      updateSelectInput(session, "group_var_desc", choices = all_cat_vars, selected = new_var_name)
+      
+      # Uji Asumsi
+      updateSelectInput(session, "group_var_norm", choices = all_cat_vars, selected = new_var_name)
+      updateSelectInput(session, "homo_group_var", choices = all_cat_vars, selected = new_var_name)
+      
+      # Statistik Inferensia I
+      updateSelectInput(session, "prop_var", choices = all_cat_vars, selected = new_var_name)
+      updateSelectInput(session, "ttest_group", choices = all_cat_vars, selected = new_var_name)
+      
+      # Statistik Inferensia II (ANOVA)
+      updateSelectInput(session, "anova_indep_var", choices = all_cat_vars, selected = new_var_name)
+      updateSelectInput(session, "anova2_factor1", choices = all_cat_vars, selected = new_var_name)
+      updateSelectInput(session, "anova2_factor2", choices = all_cat_vars)
+    }
+    
+    showNotification(paste("✅ Variabel kategorik berhasil dibuat:", new_var_name), type = "default")
+    showNotification("🔄 Semua menu sudah diperbarui dengan variabel baru!", type = "default")
   })
   
   output$categorization_plot <- renderPlot({
