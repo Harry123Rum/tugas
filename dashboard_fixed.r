@@ -857,62 +857,174 @@ server <- function(input, output, session) {
         # Silently continue if update fails
       })
       
-      showNotification("Kategorisasi berhasil dibuat!", type = "default")
+      showNotification(paste("✅ Kategorisasi berhasil dibuat untuk variabel:", input$var_to_categorize), type = "default")
+      
+      # Debug information
+      cat("DEBUG: Kategorisasi berhasil\n")
+      cat("- Variabel:", input$var_to_categorize, "\n")
+      cat("- Nama variabel baru:", new_var_name, "\n")
+      cat("- Jumlah kategori:", length(unique(categorical_var[!is.na(categorical_var)])), "\n")
+      cat("- Data points:", length(categorical_var), "\n")
     }, error = function(e) {
       showNotification(paste("Error dalam kategorisasi:", e$message), type = "error")
     })
   })
   
   output$categorization_plot <- renderPlot({
-    req(input$var_to_categorize)
-    req(values$current_data)
-    
     tryCatch({
+      req(input$var_to_categorize)
+      req(values$current_data)
+      
       var_name <- input$var_to_categorize
       cat_var_name <- paste0(var_name, "_cat")
       
+      # Check if data exists
+      if (is.null(values$current_data[[var_name]])) {
+        plot(1, 1, main = "Variabel tidak ditemukan dalam data", 
+             sub = "Pilih variabel yang valid")
+        return()
+      }
+      
       if (cat_var_name %in% names(values$current_data)) {
-        p1 <- ggplot(values$current_data, aes_string(x = var_name)) +
-          geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7) +
-          labs(title = "Distribusi Asli", x = var_name) +
-          theme_minimal()
+        # Get data for plotting
+        original_data <- values$current_data[[var_name]]
+        categorical_data <- values$current_data[[cat_var_name]]
         
-        p2 <- ggplot(values$current_data, aes_string(x = cat_var_name)) +
-          geom_bar(fill = "coral", alpha = 0.7) +
-          labs(title = "Distribusi Kategorik", x = cat_var_name) +
+        # Remove NA values for cleaner plotting
+        valid_indices <- !is.na(original_data)
+        original_clean <- original_data[valid_indices]
+        categorical_clean <- categorical_data[valid_indices]
+        
+        if (length(original_clean) == 0) {
+          plot(1, 1, main = "Tidak ada data valid untuk ditampilkan")
+          return()
+        }
+        
+        # Create data frames for ggplot
+        df_original <- data.frame(value = original_clean)
+        df_categorical <- data.frame(category = categorical_clean)
+        
+        # Plot 1: Original distribution (histogram)
+        p1 <- ggplot(df_original, aes(x = value)) +
+          geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7, color = "white") +
+          labs(title = "Distribusi Asli", 
+               x = var_name, 
+               y = "Frekuensi") +
           theme_minimal() +
-          theme(axis.text.x = element_text(angle = 45, hjust = 1))
+          theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
         
-        grid.arrange(p1, p2, ncol = 2)
+        # Plot 2: Categorical distribution (bar plot)
+        p2 <- ggplot(df_categorical, aes(x = category)) +
+          geom_bar(fill = "coral", alpha = 0.7, color = "white") +
+          labs(title = "Distribusi Kategorik", 
+               x = paste(var_name, "(Kategorik)"), 
+               y = "Frekuensi") +
+          theme_minimal() +
+          theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+        
+        # Arrange plots side by side
+        grid.arrange(p1, p2, ncol = 2, 
+                     top = paste("Perbandingan Distribusi:", var_name))
       } else {
-        plot(1, 1, main = "Buat kategorisasi terlebih dahulu")
+        # Show instruction if categorization hasn't been done
+        plot(1, 1, main = "Klik 'Buat Kategorisasi' untuk melihat perbandingan distribusi", 
+             sub = paste("Variabel dipilih:", var_name),
+             col = "blue", pch = 19, cex = 2)
+        text(1, 0.8, "👆 Tekan tombol hijau di sebelah kiri", 
+             col = "darkgreen", cex = 1.2, font = 2)
       }
     }, error = function(e) {
-      plot(1, 1, main = paste("Error:", e$message))
+      plot(1, 1, main = "Error dalam membuat plot", 
+           sub = paste("Error:", e$message), 
+           col = "red", pch = 4, cex = 2)
     })
   })
   
   output$category_table <- DT::renderDataTable({
-    req(input$var_to_categorize)
-    cat_var_name <- paste0(input$var_to_categorize, "_cat")
-    
-    if (cat_var_name %in% names(values$current_data)) {
-      tryCatch({
-        freq_table <- table(values$current_data[[cat_var_name]], useNA = "ifany")
+    tryCatch({
+      req(input$var_to_categorize)
+      
+      if (is.null(values$current_data)) {
+        return(DT::datatable(data.frame(Info = "Data belum dimuat")))
+      }
+      
+      cat_var_name <- paste0(input$var_to_categorize, "_cat")
+      
+      if (cat_var_name %in% names(values$current_data)) {
+        categorical_data <- values$current_data[[cat_var_name]]
+        
+        if (all(is.na(categorical_data))) {
+          return(DT::datatable(data.frame(Info = "Tidak ada data kategorik yang valid")))
+        }
+        
+        # Create frequency table
+        freq_table <- table(categorical_data, useNA = "ifany")
         prop_table <- prop.table(freq_table)
         
+        # Create result data frame
         result <- data.frame(
           Kategori = names(freq_table),
           Frekuensi = as.numeric(freq_table),
           Proporsi = round(as.numeric(prop_table), 4),
-          Persen = round(as.numeric(prop_table) * 100, 2)
+          Persen = round(as.numeric(prop_table) * 100, 2),
+          stringsAsFactors = FALSE
         )
         
-        DT::datatable(result, options = list(dom = 't'))
-      }, error = function(e) {
-        DT::datatable(data.frame(Error = paste("Error:", e$message)))
-      })
-    }
+        # Add total row
+        total_row <- data.frame(
+          Kategori = "TOTAL",
+          Frekuensi = sum(result$Frekuensi),
+          Proporsi = 1.0000,
+          Persen = 100.00,
+          stringsAsFactors = FALSE
+        )
+        
+        result <- rbind(result, total_row)
+        
+        # Create datatable with formatting
+        DT::datatable(result, 
+                      options = list(
+                        dom = 't',
+                        pageLength = -1,
+                        ordering = FALSE,
+                        columnDefs = list(
+                          list(className = 'dt-center', targets = 1:3),
+                          list(className = 'dt-right', targets = 1:3)
+                        )
+                      ),
+                      rownames = FALSE) %>%
+          DT::formatRound(columns = c("Proporsi", "Persen"), digits = 2) %>%
+          DT::formatStyle("Kategori", 
+                          target = "row",
+                          backgroundColor = DT::styleEqual("TOTAL", "#f0f0f0")) %>%
+          DT::formatStyle("Kategori", 
+                          fontWeight = DT::styleEqual("TOTAL", "bold"))
+      } else {
+        # Show instruction message
+        instruction_df <- data.frame(
+          Info = c(
+            "📌 Cara menggunakan kategorisasi:",
+            "1. Pilih variabel numerik dari dropdown",
+            "2. Atur jumlah kategori (2-10)",
+            "3. Atur label kategori (pisahkan dengan koma)",
+            "4. Klik tombol 'Buat Kategorisasi'",
+            "5. Tabel frekuensi akan muncul di sini"
+          )
+        )
+        
+        DT::datatable(instruction_df, 
+                      options = list(dom = 't', ordering = FALSE),
+                      rownames = FALSE,
+                      colnames = "")
+      }
+    }, error = function(e) {
+      error_df <- data.frame(
+        Error = paste("Error dalam membuat tabel:", e$message),
+        Solution = "Coba lakukan kategorisasi ulang atau pilih variabel lain"
+      )
+      DT::datatable(error_df, options = list(dom = 't'), rownames = FALSE)
+    })
   })
   
   # OUTLIER DETECTION
